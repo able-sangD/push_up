@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>푸쉬업 웹 캘린더 Plus</title>
+<link rel="manifest" href="manifest.json" />
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; background:#000; color:#fff; }
+  header { background:#111; color:#0f0; padding:18px; text-align:center; font-size:1.3rem; }
+  .container { max-width:500px; margin:20px auto; padding:15px; }
+
+  .card {
+    background:#111; padding:20px; border-radius:15px; margin-bottom:20px;
+    box-shadow:0 3px 10px rgba(255,255,255,0.05);
+    color:#fff;
+  }
+
+  label { font-weight:600; margin-bottom:6px; display:block; color:#0f0; }
+
+  input[type=date], input[type=number] {
+    width:100%; padding:12px; border-radius:10px; border:1px solid #444; margin-bottom:12px;
+    font-size:1rem; background:#000; color:#fff;
+  }
+
+  .sub-row { display:flex; gap:10px; }
+  .sub-row input { flex:1; }
+
+  button {
+    width:100%; padding:14px; background:#0f0; color:#000; border:none;
+    border-radius:10px; font-size:1rem; cursor:pointer; margin-top:10px; font-weight:bold;
+  }
+  button:hover { background:#5f5; }
+
+  .log { margin-top:10px; font-size:0.9rem; color:#ccc; }
+
+  /* 달력 */
+  .calendar {
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:5px; margin-top:10px;
+  }
+  .day {
+    background:#111; padding:10px; border-radius:8px; text-align:center;
+    box-shadow:0 1px 4px rgba(255,255,255,0.05);
+    font-size:0.85rem; color:#ccc;
+  }
+  .day.today { background:#0f0; color:#000; font-weight:bold; }
+  .day.goal { background:#003300; border:1px solid #0f0; }
+
+  #chartContainer { margin-top:20px; background:#111; padding:15px; border-radius:15px; box-shadow:0 3px 10px rgba(255,255,255,0.05); }
+
+  .streak { color:#0f0; font-weight:bold; margin-top:8px; }
+</style>
+</head>
+<body>
+
+<header>💪 푸쉬업 기록 웹앱 Plus</header>
+<div class="container">
+
+  <div class="card">
+    <label>📅 날짜 선택</label>
+    <input type="date" id="dateInput" />
+
+    <label>🎯 목표 (기본: 200개)</label>
+    <input type="number" id="goalInput" placeholder="목표 예: 200" value="200" />
+
+    <label>⏱ 시간대별 입력</label>
+    <div class="sub-row">
+      <input type="number" id="morning" placeholder="아침" />
+      <input type="number" id="noon" placeholder="점심" />
+    </div>
+    <div class="sub-row">
+      <input type="number" id="evening" placeholder="저녁" />
+      <input type="number" id="night" placeholder="자기 전" />
+    </div>
+
+    <label>🧮 총합 (자동 계산)</label>
+    <input type="number" id="totalInput" readonly />
+
+    <button id="saveBtn">저장하기</button>
+    <div class="log" id="savedLog">기록 없음</div>
+    <div class="streak" id="streakDisplay"></div>
+  </div>
+
+  <div class="card">
+    <label>📆 월별 달력</label>
+    <div id="calendar" class="calendar"></div>
+  </div>
+
+  <div id="chartContainer">
+    <label>📊 최근 7일 그래프</label>
+    <canvas id="chart" width="400" height="200"></canvas>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // ========== 초기 설정 =============
+  const today = new Date().toISOString().split("T")[0];
+  document.getElementById("dateInput").value = today;
+
+  // ===== 총합 자동 계산 =====
+  function updateTotal(){
+    const m = Number(document.getElementById("morning").value)||0;
+    const n = Number(document.getElementById("noon").value)||0;
+    const e = Number(document.getElementById("evening").value)||0;
+    const nt = Number(document.getElementById("night").value)||0;
+    document.getElementById("totalInput").value = m+n+e+nt;
+  }
+  ["morning","noon","evening","night"].forEach(id=>{
+    document.getElementById(id).addEventListener("input", updateTotal);
+  });
+
+  // ============= 저장 기능 (완전 재작성) =============
+  function saveData(){
+    const date = document.getElementById("dateInput").value;
+    const goal = Number(document.getElementById("goalInput").value)||200;
+    const morning = Number(document.getElementById("morning").value)||0;
+    const noon = Number(document.getElementById("noon").value)||0;
+    const evening = Number(document.getElementById("evening").value)||0;
+    const night = Number(document.getElementById("night").value)||0;
+    const total = morning + noon + evening + night;
+
+    const data = { goal, morning, noon, evening, night, total };
+    localStorage.setItem("pushup_"+date, JSON.stringify(data));
+
+    updateLog(date);
+    generateCalendar();
+    updateStreak();
+    drawChart();
+    alert("저장되었습니다!");
+  }
+
+  document.getElementById("saveBtn").addEventListener("click", saveData);
+
+  // ============ 기록 표시 ============
+  function updateLog(date){
+    const saved = localStorage.getItem("pushup_"+date);
+    const log = document.getElementById("savedLog");
+
+    if(!saved){ log.innerHTML = "기록 없음"; return; }
+
+    const d = JSON.parse(saved);
+    log.innerHTML = `📌 <b>${date}</b><br>총 ${d.total}개<br>아침 ${d.morning} / 점심 ${d.noon} / 저녁 ${d.evening} / 자기전 ${d.night}`;
+
+    document.getElementById("morning").value = d.morning;
+    document.getElementById("noon").value = d.noon;
+    document.getElementById("evening").value = d.evening;
+    document.getElementById("night").value = d.night;
+    document.getElementById("totalInput").value = d.total;
+  }
+
+  // ===== 날짜 변경하면 기록 불러오기 =====
+  document.getElementById("dateInput").addEventListener("change", e=>{
+    updateLog(e.target.value);
+  });
+
+  // ============= 달력 생성 (월 선택 가능 추가) =============
+  function generateCalendar(){
+    const cal = document.getElementById("calendar");
+    cal.innerHTML = "";
+
+    const current = new Date();
+    const year = current.getFullYear();
+    const month = current.getMonth();
+
+    const first = new Date(year, month, 1).getDay();
+    const last = new Date(year, month+1, 0).getDate();
+
+    for(let i=0;i<first;i++) cal.innerHTML += `<div class='day'></div>`;
+
+    for(let d=1; d<=last; d++){
+      const dateKey = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const saved = localStorage.getItem("pushup_"+dateKey);
+
+      let cls = "day";
+      if(dateKey === today) cls += " today";
+
+      let txt = "-";
+      if(saved){
+        const data = JSON.parse(saved);
+        txt = data.total;
+        if(data.total >= data.goal) cls += " goal";
+      }
+
+      cal.innerHTML += `<div class='${cls}' onclick="selectDate('${dateKey}')">${d}<br>${txt}개</div>`;
+    }
+  }
+
+  function selectDate(date){
+    document.getElementById("dateInput").value = date;
+    updateLog(date);
+  }
+
+  // ============= 연속 달성 체크 =============
+  function updateStreak(){
+    let streak = 0;
+    for(let i=0;i<30;i++){
+      const d = new Date(); d.setDate(d.getDate()-i);
+      const key = d.toISOString().split("T")[0];
+      const saved = localStorage.getItem("pushup_"+key);
+      if(!saved) break;
+      const data = JSON.parse(saved);
+      if(data.total >= data.goal) streak++;
+      else break;
+    }
+    document.getElementById("streakDisplay").innerHTML = `🔥 연속 ${streak}일 달성 중`;
+  }
+
+  // ============= 최근 7일 그래프 =============
+  function drawChart(){
+    const ctx = document.getElementById("chart").getContext("2d");
+    const labels = [];
+    const values = [];
+
+    for(let i=6;i>=0;i--){
+      const d = new Date(); d.setDate(d.getDate()-i);
+      const key = d.toISOString().split("T")[0];
+      labels.push(key.slice(5));
+
+      const saved = localStorage.getItem("pushup_"+key);
+      values.push(saved ? JSON.parse(saved).total : 0);
+    }
+
+    if(window.chartObj) window.chartObj.destroy();
+
+    window.chartObj = new Chart(ctx, {
+      type: "bar",
+      data: { labels, datasets:[{ label:"개수", data:values, backgroundColor:"#0f0" }] },
+      options:{ scales:{ y:{ beginAtZero:true } } }
+    });
+  }
+
+  // 초기 로드
+  generateCalendar();
+  updateLog(today);
+  updateStreak();
+  setTimeout(drawChart, 200);
+</script>
